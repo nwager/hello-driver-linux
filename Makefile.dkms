@@ -1,0 +1,22 @@
+#!/usr/bin/make -f
+
+PACKAGE_NAME := hello
+PACKAGE_VERSION := 0.0.1
+
+install:
+	dkms add .
+	dkms install $(PACKAGE_NAME)/$(PACKAGE_VERSION)
+
+uninstall:
+	- dkms uninstall $(PACKAGE_NAME)/$(PACKAGE_VERSION)
+	- dkms remove $(PACKAGE_NAME)/$(PACKAGE_VERSION) --all
+	- rm -rf /usr/src/$(PACKAGE_NAME)-$(PACKAGE_VERSION)
+
+load:
+	@test -n "$$(dkms status $(PACKAGE_NAME)/$(PACKAGE_VERSION))" || { echo 'Please run `make -f Makefile.dkms install` first.'; false; }
+	modprobe hello
+
+unload:
+	rmmod hello
+
+.PHONY: install uninstall load unload
