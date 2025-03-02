@@ -104,12 +104,7 @@ static ssize_t cdev_write(struct file *f, const char __user *buf,
  */
 static int cdev_open(struct inode *inode, struct file *fp)
 {
-	pr_info(LOG("open: Major: %d. Minor: %d"), imajor(inode), iminor(inode));
-	
-	pr_info(LOG("fp->f_pos: %lld"), fp->f_pos);
-	pr_info(LOG("fp->f_mode: 0x%x"), fp->f_mode);
-	pr_info(LOG("fp->f_flags: 0x%x"), fp->f_flags);
-
+	pr_info(LOG("Open dev node {major: %d, minor: %d}"), imajor(inode), iminor(inode));
 	return 0;
 }
 
