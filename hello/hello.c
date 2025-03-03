@@ -48,7 +48,7 @@ static ssize_t cdev_read(struct file *f, char __user *buf,
 static ssize_t cdev_write(struct file *f, const char __user *buf,
                           size_t len, loff_t *off);
 
-static dev_t first; // Global variable for the first device number
+static dev_t cdev_num; // Global variable for the device number
 static struct cdev c_dev; // Global variable for the character device structure
 static struct class *cl; // Global variable for the device class
 static int major;
@@ -190,14 +190,11 @@ static int __init hello_init(void)
 	pr_info(LOG("Hello, kernel!"));
 
 	// Register character device number
-	int minor = 0;
-	major = register_chrdev(minor, CDEV_LABEL, &cdev_fops);
-	if (major < 0) {
-		pr_err(LOG("Error registering cdev"));
+	if (alloc_chrdev_region(&cdev_num, 0, 1, CDEV_LABEL) < 0) {
+		pr_err(LOG("Error registering cdev device number"));
 		return major;
 	}
-	first = MKDEV(major, minor);
-	pr_info(LOG("Major device number: %d"), major);
+	pr_info(LOG("Major device number: %d"), MAJOR(major));
 
 	// Create sysfs class for character device
 	cl = class_create(CDEV_CLASS);
@@ -208,7 +205,7 @@ static int __init hello_init(void)
 	}
 
 	// Create device
-	if (device_create(cl, NULL, first, NULL, CDEV_NAME) == NULL) {
+	if (device_create(cl, NULL, cdev_num, NULL, CDEV_NAME) == NULL) {
 		pr_err(LOG("Error creating device"));
 		error = -ENOMEM;
 		goto r_class;
@@ -216,7 +213,7 @@ static int __init hello_init(void)
 
 	// Add dev node
 	cdev_init(&c_dev, &cdev_fops);
-	if (cdev_add(&c_dev, first, 1) < 0) {
+	if (cdev_add(&c_dev, cdev_num, 1) < 0) {
 		pr_err(LOG("Error adding device file"));
 		error = -ENOMEM;
 		goto r_dev;
@@ -252,11 +249,11 @@ r_sysfs:
 r_devnode:
 	cdev_del(&c_dev);
 r_dev:
-	device_destroy(cl, first);
+	device_destroy(cl, cdev_num);
 r_class:
 	class_destroy(cl);
 r_unreg:
-	unregister_chrdev(major, CDEV_LABEL);
+	unregister_chrdev(cdev_num, CDEV_LABEL);
 	return error;
 }
 
@@ -266,9 +263,9 @@ static void __exit hello_exit(void)
 	kobject_put(kobj_ref);
 	sysfs_remove_file(kernel_kobj, &kobj_attr.attr);
 	cdev_del(&c_dev);
-	device_destroy(cl, first);
+	device_destroy(cl, cdev_num);
 	class_destroy(cl);
-	unregister_chrdev(major, CDEV_LABEL);
+	unregister_chrdev(cdev_num, CDEV_LABEL);
 	pr_info(LOG("Goodbye, kernel!"));
 }
 
