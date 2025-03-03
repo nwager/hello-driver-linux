@@ -52,12 +52,12 @@ unload:
 
 test: module unload
 	insmod hello.ko
-	echo "test" > /dev/hello
-	cat /dev/hello
-	echo "second" > /dev/hello
-	cat /dev/hello
-	echo "appendit" >> /dev/hello
-	cat /dev/hello
+	echo -n "test1" > /dev/hello
+	[ "$$(cat /dev/hello)" = "test1" ]
+	echo -n "test2" > /dev/hello
+	[ "$$(cat /dev/hello)" = "test2" ]
+	echo -n "test3" >> /dev/hello
+	[ "$$(cat /dev/hello)" = "test2test3" ]
 	rmmod hello
 
 .PHONY: module clean install uninstall load unload install-dkms uninstall-dkms test
