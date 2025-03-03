@@ -50,4 +50,14 @@ load: module
 unload:
 	! grep -q "^hello " /proc/modules || rmmod hello
 
-.PHONY: module clean install uninstall load unload install-dkms uninstall-dkms
+test: module unload
+	insmod hello.ko
+	echo "test" > /dev/hello
+	cat /dev/hello
+	echo "second" > /dev/hello
+	cat /dev/hello
+	echo "appendit" >> /dev/hello
+	cat /dev/hello
+	rmmod hello
+
+.PHONY: module clean install uninstall load unload install-dkms uninstall-dkms test
