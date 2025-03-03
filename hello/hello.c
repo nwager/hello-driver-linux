@@ -7,6 +7,7 @@
 #include <linux/device.h>
 #include <linux/kdev_t.h>
 #include <linux/cdev.h>
+#include <linux/mutex.h>
 
 #define LOG(msg) "hello: " msg "\n"
 
@@ -42,7 +43,7 @@ static int val = 0;
  */
 static int cdev_open(struct inode *inode, struct file *fp);
 static int cdev_release(struct inode *inode, struct file *fp);
-static ssize_t cdev_read(struct file *f, char __user *u,
+static ssize_t cdev_read(struct file *f, char __user *buf,
                          size_t len, loff_t *off);
 static ssize_t cdev_write(struct file *f, const char __user *buf,
                           size_t len, loff_t *off);
@@ -58,14 +59,30 @@ static struct file_operations cdev_fops = {
 	.release = cdev_release,
 };
 
+#define CDEV_BUFSIZE 512
+char *cdev_buf;
+unsigned int cdev_buflen = 0;
+
+/*
+ * Locks
+ */
+DEFINE_MUTEX(cdev_lk);
+DEFINE_MUTEX(sysfs_lk);
+
 /**
  * Read from sysfs file.
  */
 static ssize_t sysfs_show(struct kobject *kobj, struct kobj_attribute *attr,
                           char *buf)
 {
+	int n;
+
 	pr_info(LOG("sysfs read"));
-	return sprintf(buf, "%d\n", val);
+	mutex_lock(&sysfs_lk);
+	n = sprintf(buf, "%d\n", val);
+	mutex_unlock(&sysfs_lk);
+
+	return n;
 }
 
 /**
@@ -75,18 +92,37 @@ static ssize_t sysfs_store(struct kobject *kobj, struct kobj_attribute *attr,
                            const char *buf, size_t count)
 {
 	pr_info(LOG("sysfs write"));
+	mutex_lock(&sysfs_lk);
 	sscanf(buf, "%d", &val);
+	mutex_unlock(&sysfs_lk);
+
 	return count;
 }
 
 /**
  * Read from character device.
  */
-static ssize_t cdev_read(struct file *f, char __user *u,
+static ssize_t cdev_read(struct file *f, char __user *buf,
                          size_t len, loff_t *off)
 {
+	size_t bytes_read, to_read;
+
 	pr_info(LOG("Read from character device"));
-	return 0;
+
+	mutex_lock(&cdev_lk);
+
+	to_read = *off + len > cdev_buflen ? cdev_buflen - *off : len;
+	if (copy_to_user(buf + *off, cdev_buf, to_read)) {
+		bytes_read = 0;
+		goto r_unlock;
+	}
+	*off += to_read;
+	bytes_read = to_read;
+
+r_unlock:
+	mutex_unlock(&cdev_lk);
+	pr_info(LOG("Returning bytes_read = %lu with offset %lld"), bytes_read, *off);
+	return bytes_read;
 }
 
 /**
@@ -95,8 +131,38 @@ static ssize_t cdev_read(struct file *f, char __user *u,
 static ssize_t cdev_write(struct file *f, const char __user *buf,
                           size_t len, loff_t *off)
 {
-	pr_info(LOG("Write to character device"));
+	int error;
+	size_t start;
+
+	pr_info(LOG("Write to character device with offset %lld"), *off);
+
+	mutex_lock(&cdev_lk);
+
+	start = *off;
+	if (f->f_flags & O_APPEND)
+		start = cdev_buflen;
+
+	if (start + len > CDEV_BUFSIZE) {
+		pr_err(LOG("Write failed: not enough space in buffer"));
+		error = -ENOMEM;
+		goto r_unlock;
+	}
+
+	if (copy_from_user(cdev_buf + start, buf, len)) {
+		error = -EFAULT;
+		goto r_unlock;
+	}
+	cdev_buflen = start + len;
+	*off += len;
+
+	mutex_unlock(&cdev_lk);
+
+	pr_info(LOG("Wrote %lu bytes"), len);
 	return len;
+
+r_unlock:
+	mutex_unlock(&cdev_lk);
+	return error;
 }
 
 /**
@@ -171,6 +237,13 @@ static int __init hello_init(void)
 		goto r_sysfs;
 	}
 
+	cdev_buf = kmalloc(CDEV_BUFSIZE, GFP_KERNEL);
+	if (cdev_buf == NULL) {
+		pr_err(LOG("Error allocating memory for cdev buffer"));
+		error = -ENOMEM;
+		return error;
+	}
+
 	return 0;
 
 r_sysfs:
@@ -189,12 +262,13 @@ r_unreg:
 
 static void __exit hello_exit(void)
 {
+	kfree(cdev_buf);
+	kobject_put(kobj_ref);
+	sysfs_remove_file(kernel_kobj, &kobj_attr.attr);
 	cdev_del(&c_dev);
 	device_destroy(cl, first);
 	class_destroy(cl);
 	unregister_chrdev(major, CDEV_LABEL);
-	kobject_put(kobj_ref);
-	sysfs_remove_file(kernel_kobj, &kobj_attr.attr);
 	pr_info(LOG("Goodbye, kernel!"));
 }
 
