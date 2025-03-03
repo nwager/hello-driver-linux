@@ -12,7 +12,7 @@
 #define LOG(msg) "hello: " msg "\n"
 
 #define SYSFS_ENTRY "hello"
-#define SYSFS_FNAME hello_val
+#define SYSFS_FNAME fib
 #define CDEV_LABEL "hello_cdev"
 #define CDEV_CLASS "hello_cdev_cl"
 #define CDEV_NAME "hello"
@@ -30,6 +30,8 @@ static ssize_t sysfs_show(struct kobject *kobj, struct kobj_attribute *attr,
                           char *buf);
 static ssize_t sysfs_store(struct kobject *kobj, struct kobj_attribute *attr,
                            const char *buf, size_t count);
+
+static unsigned long fibonacci(int n);
 
 struct kobject *kobj_ref;
 // File attributes
@@ -70,6 +72,23 @@ DEFINE_MUTEX(cdev_lk);
 DEFINE_MUTEX(sysfs_lk);
 
 /**
+ * Return nth number of the Fibonacci sequence.
+ */
+static unsigned long fibonacci(int n)
+{
+	int i, tmp, f_prev = 0, f_next = 1;
+
+	if (n < 1)
+		return 0;
+	for (i = 1; i < n; i++) {
+		tmp = f_prev + f_next;
+		f_prev = f_next;
+		f_next = tmp;
+	}
+	return f_next;
+}
+
+/**
  * Read from sysfs file.
  */
 static ssize_t sysfs_show(struct kobject *kobj, struct kobj_attribute *attr,
@@ -79,7 +98,7 @@ static ssize_t sysfs_show(struct kobject *kobj, struct kobj_attribute *attr,
 
 	pr_info(LOG("sysfs read"));
 	mutex_lock(&sysfs_lk);
-	n = sprintf(buf, "%d\n", val);
+	n = sprintf(buf, "%lu\n", fibonacci(val));
 	mutex_unlock(&sysfs_lk);
 
 	return n;
